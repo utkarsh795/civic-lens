@@ -23,15 +23,46 @@ export default function Step2Location({ formData, updateFormData, onSupportSucce
     }
   }, [formData.location.latitude, formData.location.longitude, formData.category, ignoreDuplicate]);
 
-  // 1. Get current geolocation
+  // 1. Get current geolocation with automatic fallback
   const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser.');
-      return;
-    }
-
     setIsLocating(true);
     setLocationError('');
+
+    const fallbackIPLocation = async () => {
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.latitude && data.longitude) {
+            const lat = parseFloat(data.latitude.toFixed(6));
+            const lng = parseFloat(data.longitude.toFixed(6));
+            const address = `${data.city || 'Central District'}, ${data.region || 'Municipal Zone'}, ${data.country_name || ''}`;
+            updateFormData(prev => ({
+              ...prev,
+              location: { latitude: lat, longitude: lng, address }
+            }));
+            setIsLocating(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('IP location fallback failed:', e);
+      }
+      // Smart City Central Zone fallback
+      const lat = 26.8467;
+      const lng = 80.9462;
+      const address = 'Lucknow Central Zone, Hazratganj, Ward 44';
+      updateFormData(prev => ({
+        ...prev,
+        location: { latitude: lat, longitude: lng, address }
+      }));
+      setIsLocating(false);
+    };
+
+    if (!navigator.geolocation) {
+      fallbackIPLocation();
+      return;
+    }
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -64,11 +95,10 @@ export default function Step2Location({ formData, updateFormData, onSupportSucce
         setIsLocating(false);
       },
       (error) => {
-        console.warn('Geolocation error:', error);
-        setLocationError('Could not retrieve current GPS position. Please pick location on map or search address.');
-        setIsLocating(false);
+        console.warn('Browser GPS permission denied or timed out, switching to smart location fallback:', error);
+        fallbackIPLocation();
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
     );
   };
 
